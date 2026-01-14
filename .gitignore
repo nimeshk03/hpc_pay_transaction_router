@@ -1,0 +1,26 @@
+# Rust build artifacts
+/target
+Cargo.lock
+
+# Documentation
+implementation_plan.md
+
+# IDE
+.windsurf/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+*.profraw
+*.profdata
+
+# Backup files
+*.bak
+*.tmp
+
+# Environment
+.env
+.env.local
