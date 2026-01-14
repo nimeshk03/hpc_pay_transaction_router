@@ -8,13 +8,13 @@ This library provides intelligent routing of payment transactions across multipl
 
 ## Features
 
-### ✅ Milestone 1.1: Core Data Models (Completed)
+### Core Data Models (Completed)
 - **TransactionRequest**: Validated transaction data with priority support
 - **RouteConfig**: PSP configuration with cost structure and limits
 - **RoutingDecision**: Detailed routing decision metadata
 - **Error Handling**: Comprehensive error types for all operations
 
-### ✅ Milestone 1.2: Configuration Management (Completed)
+### Configuration Management (Completed)
 - **ConfigLoader**: Load configurations from JSON/YAML files
 - **ConfigValidator**: Business rule validation for configurations
 - **ConfigWatcher**: Hot-reload capability with file change detection
@@ -242,7 +242,7 @@ Requirements:
 
 ```bash
 # Clone repository
-git clone <repo-url>
+git clone https://github.com/nimeshk03/hpc_pay_transaction_router.git
 cd transaction_router
 
 # Build
@@ -266,27 +266,27 @@ cargo build --release
 
 ## Roadmap
 
-### Phase 1: Foundation ✅
-- [x] Milestone 1.1: Core Data Models
-- [x] Milestone 1.2: Configuration Management
+### Foundation
+- [x] Core Data Models
+- [x] Configuration Management
 
-### Phase 2: Basic Routing Engine 🔄
-- [ ] Milestone 2.1: Route Filtering & Selection
-- [ ] Milestone 2.2: Basic Router Implementation
+### Basic Routing Engine
+- [ ] Route Filtering & Selection
+- [ ] Basic Router Implementation
 
-### Phase 3: Circuit Breaker 📋
-- [ ] Milestone 3.1: Circuit Breaker State Machine
-- [ ] Milestone 3.2: Circuit Breaker Integration
+### Circuit Breaker
+- [ ] Circuit Breaker State Machine
+- [ ] Circuit Breaker Integration
 
-### Phase 4: Health Monitoring 📋
-- [ ] Milestone 4.1: Metrics Collection
-- [ ] Milestone 4.2: Active Health Probes
-- [ ] Milestone 4.3: Predictive Latency Model
+### Health Monitoring
+- [ ] Metrics Collection
+- [ ] Active Health Probes
+- [ ] Predictive Latency Model
 
-### Phase 5: Performance Optimization 📋
-- [ ] Milestone 5.1: Lock-Free Priority Queue
-- [ ] Milestone 5.2: Connection Pooling
-- [ ] Milestone 5.3: Performance Tuning
+### Performance Optimization
+- [ ] Lock-Free Priority Queue
+- [ ] Connection Pooling
+- [ ] Performance Tuning
 
 See [implementation_plan.md](../implementation_plan.md) for detailed roadmap.
 
