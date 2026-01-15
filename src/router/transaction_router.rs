@@ -1,3 +1,4 @@
+use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerMetrics, CircuitState};
 use crate::config::loader::RouterConfig;
 use crate::errors::ConfigError;
 use crate::models::{RouteConfig, RoutingDecision, TransactionRequest};
@@ -47,10 +48,21 @@ pub struct TransactionRouter {
     merchant_preferences: Arc<Mutex<HashMap<String, MerchantPreferences>>>,
     metrics: Arc<Mutex<RoutingMetrics>>,
     audit_log: Arc<Mutex<Vec<RoutingDecision>>>,
+    circuit_breakers: Arc<Mutex<HashMap<String, CircuitBreaker>>>,
 }
 
 impl TransactionRouter {
     pub fn new(config: RouterConfig) -> Result<Self, ConfigError> {
+        let mut circuit_breakers = HashMap::new();
+        let cb_config = CircuitBreakerConfig::default();
+        
+        for route in &config.routes {
+            circuit_breakers.insert(
+                route.psp_id.clone(),
+                CircuitBreaker::new(cb_config.clone()),
+            );
+        }
+        
         Ok(Self {
             routes: config.routes,
             scorer: RouteScorer::with_default_weights(),
@@ -58,6 +70,7 @@ impl TransactionRouter {
             merchant_preferences: Arc::new(Mutex::new(HashMap::new())),
             metrics: Arc::new(Mutex::new(RoutingMetrics::default())),
             audit_log: Arc::new(Mutex::new(Vec::new())),
+            circuit_breakers: Arc::new(Mutex::new(circuit_breakers)),
         })
     }
 
@@ -85,6 +98,16 @@ impl TransactionRouter {
             return self.create_failed_decision(
                 transaction,
                 "No eligible routes found".to_string(),
+                start,
+            );
+        }
+
+        eligible = self.filter_by_circuit_state(eligible);
+
+        if eligible.is_empty() {
+            return self.create_failed_decision(
+                transaction,
+                "No routes available - all circuits open".to_string(),
                 start,
             );
         }
@@ -237,7 +260,68 @@ impl TransactionRouter {
     }
 
     pub fn update_routes(&mut self, config: RouterConfig) {
+        let mut circuit_breakers = self.circuit_breakers.lock().unwrap();
+        let cb_config = CircuitBreakerConfig::default();
+        
+        for route in &config.routes {
+            if !circuit_breakers.contains_key(&route.psp_id) {
+                circuit_breakers.insert(
+                    route.psp_id.clone(),
+                    CircuitBreaker::new(cb_config.clone()),
+                );
+            }
+        }
+        
         self.routes = config.routes;
+    }
+
+    pub fn get_circuit_breaker(&self, psp_id: &str) -> Option<CircuitBreaker> {
+        let breakers = self.circuit_breakers.lock().unwrap();
+        breakers.get(psp_id).cloned()
+    }
+
+    pub fn get_all_circuit_states(&self) -> HashMap<String, CircuitState> {
+        let breakers = self.circuit_breakers.lock().unwrap();
+        breakers
+            .iter()
+            .map(|(id, breaker)| (id.clone(), breaker.state()))
+            .collect()
+    }
+
+    pub fn get_all_circuit_metrics(&self) -> HashMap<String, CircuitBreakerMetrics> {
+        let breakers = self.circuit_breakers.lock().unwrap();
+        breakers
+            .iter()
+            .map(|(id, breaker)| (id.clone(), breaker.get_metrics()))
+            .collect()
+    }
+
+    pub fn record_route_success(&self, psp_id: &str) {
+        let breakers = self.circuit_breakers.lock().unwrap();
+        if let Some(breaker) = breakers.get(psp_id) {
+            breaker.record_success();
+        }
+    }
+
+    pub fn record_route_failure(&self, psp_id: &str) {
+        let breakers = self.circuit_breakers.lock().unwrap();
+        if let Some(breaker) = breakers.get(psp_id) {
+            breaker.record_failure();
+        }
+    }
+
+    fn filter_by_circuit_state(&self, routes: Vec<RouteConfig>) -> Vec<RouteConfig> {
+        let breakers = self.circuit_breakers.lock().unwrap();
+        routes
+            .into_iter()
+            .filter(|route| {
+                if let Some(breaker) = breakers.get(&route.psp_id) {
+                    breaker.state() != CircuitState::Open
+                } else {
+                    true
+                }
+            })
+            .collect()
     }
 }
 
@@ -456,5 +540,129 @@ mod tests {
         let metrics = router.get_metrics();
         assert!(metrics.success_rate() > 0.0);
         assert!(metrics.success_rate() <= 1.0);
+    }
+
+    #[test]
+    fn test_circuit_breaker_initialization() {
+        let config = create_test_config();
+        let router = TransactionRouter::new(config).unwrap();
+
+        let breaker = router.get_circuit_breaker("stripe");
+        assert!(breaker.is_some());
+
+        let breaker = breaker.unwrap();
+        assert_eq!(breaker.state(), CircuitState::Closed);
+    }
+
+    #[test]
+    fn test_circuit_breaker_filtering() {
+        let config = create_test_config();
+        let router = TransactionRouter::new(config).unwrap();
+
+        if let Some(breaker) = router.get_circuit_breaker("stripe") {
+            breaker.force_open();
+        }
+
+        let tx = create_test_transaction("100.00");
+        let decision = router.route(&tx).unwrap();
+
+        assert_ne!(decision.selected_route, Some("stripe".to_string()));
+    }
+
+    #[test]
+    fn test_all_circuits_open() {
+        let config = create_test_config();
+        let router = TransactionRouter::new(config).unwrap();
+
+        if let Some(breaker) = router.get_circuit_breaker("stripe") {
+            breaker.force_open();
+        }
+        if let Some(breaker) = router.get_circuit_breaker("adyen") {
+            breaker.force_open();
+        }
+
+        let tx = create_test_transaction("100.00");
+        let result = router.route(&tx);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_record_route_success() {
+        let config = create_test_config();
+        let router = TransactionRouter::new(config).unwrap();
+
+        router.record_route_success("stripe");
+
+        if let Some(breaker) = router.get_circuit_breaker("stripe") {
+            let metrics = breaker.get_metrics();
+            assert_eq!(metrics.successful_calls, 1);
+        }
+    }
+
+    #[test]
+    fn test_record_route_failure() {
+        let config = create_test_config();
+        let router = TransactionRouter::new(config).unwrap();
+
+        router.record_route_failure("stripe");
+
+        if let Some(breaker) = router.get_circuit_breaker("stripe") {
+            let metrics = breaker.get_metrics();
+            assert_eq!(metrics.failed_calls, 1);
+        }
+    }
+
+    #[test]
+    fn test_get_all_circuit_states() {
+        let config = create_test_config();
+        let router = TransactionRouter::new(config).unwrap();
+
+        let states = router.get_all_circuit_states();
+        assert_eq!(states.len(), 2);
+        assert_eq!(states.get("stripe"), Some(&CircuitState::Closed));
+        assert_eq!(states.get("adyen"), Some(&CircuitState::Closed));
+    }
+
+    #[test]
+    fn test_get_all_circuit_metrics() {
+        let config = create_test_config();
+        let router = TransactionRouter::new(config).unwrap();
+
+        router.record_route_success("stripe");
+        router.record_route_failure("adyen");
+
+        let metrics = router.get_all_circuit_metrics();
+        assert_eq!(metrics.len(), 2);
+
+        let stripe_metrics = metrics.get("stripe").unwrap();
+        assert_eq!(stripe_metrics.successful_calls, 1);
+
+        let adyen_metrics = metrics.get("adyen").unwrap();
+        assert_eq!(adyen_metrics.failed_calls, 1);
+    }
+
+    #[test]
+    fn test_circuit_breaker_with_route_update() {
+        let config = create_test_config();
+        let mut router = TransactionRouter::new(config).unwrap();
+
+        router.record_route_success("stripe");
+
+        let mut new_route = RouteConfig::new(
+            "paypal".to_string(),
+            "PayPal".to_string(),
+            "https://api.paypal.com".to_string(),
+        )
+        .unwrap();
+        new_route.supported_methods = vec![PaymentMethod::Wallet];
+        new_route.supported_currencies = vec!["USD".to_string()];
+        new_route.enabled = true;
+
+        let new_config = RouterConfig::new().with_routes(vec![new_route]);
+        router.update_routes(new_config);
+
+        let breaker = router.get_circuit_breaker("paypal");
+        assert!(breaker.is_some());
     }
 }

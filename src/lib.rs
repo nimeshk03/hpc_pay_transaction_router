@@ -1,8 +1,10 @@
+pub mod circuit_breaker;
 pub mod config;
 pub mod errors;
 pub mod models;
 pub mod router;
 
+pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig as CBConfig, CircuitBreakerMetrics, CircuitState};
 pub use config::{ConfigLoader, ConfigValidator, ConfigWatcher};
 pub use errors::{ConfigError, RouteError, TransactionError};
 pub use models::{

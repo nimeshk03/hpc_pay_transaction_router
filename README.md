@@ -33,6 +33,16 @@ This library provides intelligent routing of payment transactions across multipl
 - **Metrics Collection**: Real-time routing metrics (latency, success rate, throughput)
 - **Route Updates**: Hot-reload support for configuration changes
 
+### Circuit Breaker (Completed)
+- **CircuitBreaker**: Three-state circuit breaker (CLOSED, OPEN, HALF_OPEN)
+- **Automatic State Transitions**: Failure threshold detection and timeout-based recovery
+- **Metrics Tracking**: Success/failure rates, rejection counts, state transitions
+- **Configurable Thresholds**: Customizable failure/success thresholds and timeouts
+- **Thread-Safe**: Concurrent access support with Arc<Mutex>
+- **Call Wrapper**: Convenient API for wrapping function calls
+- **Router Integration**: Per-PSP circuit breakers with automatic route filtering
+- **Cascading Failure Prevention**: Routes with open circuits automatically excluded from selection
+
 ## Installation
 
 Add to your `Cargo.toml`:
@@ -206,6 +216,101 @@ println!("Avg latency: {:.2}μs", metrics.average_latency_us());
 let audit_log = router.get_audit_log();
 for decision in audit_log.iter().take(5) {
     println!("Request {}: {:?}", decision.request_id, decision.selected_route);
+}
+```
+
+### 8. Circuit Breaker Usage
+
+```rust
+use transaction_router::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
+use std::time::Duration;
+
+// Create circuit breaker with custom config
+let config = CircuitBreakerConfig::new(
+    5,    // failure_threshold
+    2,    // success_threshold
+    60,   // timeout_secs
+    3     // half_open_max_calls
+);
+let breaker = CircuitBreaker::new(config);
+
+// Use call wrapper for automatic state management
+let result = breaker.call(|| {
+    // Your PSP API call here
+    make_payment_request()
+});
+
+match result {
+    Ok(response) => println!("Payment successful: {:?}", response),
+    Err(e) => println!("Payment failed or circuit open: {:?}", e),
+}
+
+// Manual state tracking
+if breaker.is_call_permitted() {
+    match make_payment_request() {
+        Ok(_) => breaker.record_success(),
+        Err(_) => breaker.record_failure(),
+    }
+}
+
+// Check circuit state
+println!("Circuit state: {:?}", breaker.state());
+
+// Get metrics
+let metrics = breaker.get_metrics();
+println!("Success rate: {:.2}%", metrics.success_rate() * 100.0);
+println!("Failed calls: {}", metrics.failed_calls);
+println!("Rejected calls: {}", metrics.rejected_calls);
+```
+
+### 9. Circuit Breaker Integration with Router
+
+```rust
+use transaction_router::{
+    ConfigLoader, TransactionRouter, TransactionRequest, PaymentMethod
+};
+use rust_decimal::Decimal;
+use std::str::FromStr;
+
+// Load configuration and create router
+let config = ConfigLoader::load("config/routes.json")?;
+let router = TransactionRouter::new(config)?;
+
+// Routes with open circuits are automatically filtered out
+let tx = TransactionRequest::new(
+    "merchant_123".to_string(),
+    Decimal::from_str("100.00").unwrap(),
+    "USD".to_string(),
+    PaymentMethod::Card,
+)?;
+
+let decision = router.route(&tx)?;
+println!("Selected route: {:?}", decision.selected_route);
+
+// Record success/failure for circuit breaker tracking
+if let Some(ref psp_id) = decision.selected_route {
+    // After successful payment
+    router.record_route_success(psp_id);
+    
+    // Or after failed payment
+    // router.record_route_failure(psp_id);
+}
+
+// Check circuit breaker states
+let states = router.get_all_circuit_states();
+for (psp_id, state) in states {
+    println!("{}: {:?}", psp_id, state);
+}
+
+// Get circuit breaker metrics for all PSPs
+let cb_metrics = router.get_all_circuit_metrics();
+for (psp_id, metrics) in cb_metrics {
+    println!("{} - Success rate: {:.2}%", psp_id, metrics.success_rate() * 100.0);
+}
+
+// Access individual circuit breaker
+if let Some(breaker) = router.get_circuit_breaker("stripe") {
+    println!("Stripe circuit state: {:?}", breaker.state());
 }
 ```
 
