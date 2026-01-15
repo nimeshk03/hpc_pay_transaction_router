@@ -20,6 +20,19 @@ This library provides intelligent routing of payment transactions across multipl
 - **ConfigWatcher**: Hot-reload capability with file change detection
 - **Sample Configs**: Production-ready configuration examples
 
+### Route Filtering & Selection (Completed)
+- **RouteFilter**: Filter routes by payment method, currency, amount limits, and health status
+- **RouteScorer**: Score routes using weighted algorithm (latency, cost, success rate, availability)
+- **RouteSelector**: Select routes using highest score or weighted random strategies
+- **Fallback Routes**: Automatic fallback route selection for resilience
+
+### Transaction Router (Completed)
+- **TransactionRouter**: Complete end-to-end routing with filtering, scoring, and selection
+- **Merchant Preferences**: Per-merchant preferred/blocked PSPs and custom scoring weights
+- **Audit Logging**: Complete decision history with timestamps and metadata
+- **Metrics Collection**: Real-time routing metrics (latency, success rate, throughput)
+- **Route Updates**: Hot-reload support for configuration changes
+
 ## Installation
 
 Add to your `Cargo.toml`:
@@ -86,6 +99,113 @@ loop {
         println!("Configuration reloaded! Version: {}", new_config.version);
     }
     std::thread::sleep(Duration::from_secs(5));
+}
+```
+
+### 5. Route Selection
+
+```rust
+use transaction_router::{
+    RouteFilter, RouteScorer, RouteSelector, ScoringWeights,
+    TransactionRequest, PaymentMethod
+};
+use rust_decimal::Decimal;
+use std::str::FromStr;
+
+// Load routes from configuration
+let config = ConfigLoader::load("config/routes.json")?;
+let routes = config.routes;
+
+// Create transaction
+let tx = TransactionRequest::new(
+    "merchant_123".to_string(),
+    Decimal::from_str("100.00").unwrap(),
+    "USD".to_string(),
+    PaymentMethod::Card,
+)?;
+
+// Filter eligible routes
+let eligible = RouteFilter::filter_eligible(&routes, &tx);
+println!("Found {} eligible routes", eligible.len());
+
+// Score routes with custom weights
+let weights = ScoringWeights::new(0.3, 0.3, 0.25, 0.15);
+let scorer = RouteScorer::new(weights);
+let scores = scorer.score_routes(&eligible, &tx);
+
+// Select best route with fallbacks
+let selector = RouteSelector::with_highest_score();
+let (primary, fallbacks) = selector.select_with_fallbacks(&eligible, &scores, 2);
+
+if let Some(route) = primary {
+    println!("Selected route: {}", route.name);
+    println!("Fallback routes: {:?}", 
+        fallbacks.iter().map(|r| &r.name).collect::<Vec<_>>());
+}
+```
+
+### 6. Weighted Random Selection
+
+```rust
+use transaction_router::{RouteSelector, SelectionStrategy};
+
+// Use weighted random for load distribution
+let selector = RouteSelector::with_weighted_random();
+let selected = selector.select(&eligible, &scores);
+
+// Routes with higher scores are selected more frequently
+if let Some(route) = selected {
+    println!("Randomly selected: {}", route.name);
+}
+```
+
+### 7. Complete Transaction Routing
+
+```rust
+use transaction_router::{
+    ConfigLoader, TransactionRouter, TransactionRequest, 
+    PaymentMethod, MerchantPreferences, ScoringWeights
+};
+use rust_decimal::Decimal;
+use std::str::FromStr;
+
+// Load configuration
+let config = ConfigLoader::load("config/routes.json")?;
+
+// Create router with custom settings
+let router = TransactionRouter::new(config)?
+    .with_scoring_weights(ScoringWeights::new(0.3, 0.3, 0.25, 0.15));
+
+// Set merchant preferences
+let mut preferences = MerchantPreferences::default();
+preferences.preferred_psps.push("stripe".to_string());
+preferences.blocked_psps.push("slow_psp".to_string());
+router.set_merchant_preferences("merchant_vip".to_string(), preferences);
+
+// Route transaction
+let tx = TransactionRequest::new(
+    "merchant_vip".to_string(),
+    Decimal::from_str("100.00").unwrap(),
+    "USD".to_string(),
+    PaymentMethod::Card,
+)?;
+
+let decision = router.route(&tx)?;
+
+println!("Selected: {:?}", decision.selected_route);
+println!("Fallbacks: {:?}", decision.fallback_routes);
+println!("Decision time: {}μs", decision.decision_time_us);
+
+// Get metrics
+let metrics = router.get_metrics();
+println!("Total requests: {}", metrics.total_requests);
+println!("Success rate: {:.2}%", metrics.success_rate() * 100.0);
+println!("Avg latency: {:.2}μs", metrics.average_latency_us());
+
+// View audit log
+let audit_log = router.get_audit_log();
+for decision in audit_log.iter().take(5) {
+    println!("Request {}: {:?}", decision.request_id, decision.selected_route);
 }
 ```
 

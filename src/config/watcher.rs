@@ -7,11 +7,13 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+type NotifyResult = Result<Event, notify::Error>;
+
 pub struct ConfigWatcher {
     config_path: PathBuf,
     current_config: Arc<Mutex<RouterConfig>>,
     last_modified: Arc<Mutex<SystemTime>>,
-    change_receiver: Receiver<Result<Event, notify::Error>>,
+    change_receiver: Receiver<NotifyResult>,
     _watcher: RecommendedWatcher,
 }
 
@@ -28,7 +30,7 @@ impl ConfigWatcher {
         let initial_config = ConfigLoader::load(&config_path)?;
         ConfigValidator::validate(&initial_config)?;
 
-        let (tx, rx): (Sender<Result<Event, notify::Error>>, Receiver<Result<Event, notify::Error>>) = channel();
+        let (tx, rx): (Sender<NotifyResult>, Receiver<NotifyResult>) = channel();
 
         let mut watcher = notify::recommended_watcher(move |res| {
             let _ = tx.send(res);

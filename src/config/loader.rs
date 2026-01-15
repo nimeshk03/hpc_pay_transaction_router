@@ -84,9 +84,9 @@ impl ConfigLoader {
 
         let content = match extension {
             "json" => serde_json::to_string_pretty(config)
-                .map_err(|e| ConfigError::JsonParseError(e))?,
+                .map_err(ConfigError::JsonParseError)?,
             "yaml" | "yml" => serde_yaml::to_string(config)
-                .map_err(|e| ConfigError::YamlParseError(e))?,
+                .map_err(ConfigError::YamlParseError)?,
             _ => {
                 return Err(ConfigError::ValidationError(
                     format!("Unsupported file format: {}", extension),
