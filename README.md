@@ -73,6 +73,33 @@ This library provides intelligent routing of payment transactions across multipl
 - **Thread-Safe**: Concurrent prediction updates
 - **High Accuracy**: Sub-millisecond prediction precision
 
+### High-Performance Priority Queue (Completed)
+- **PriorityQueue**: Concurrent priority-based transaction ordering
+- **Four Priority Levels**: Critical, High, Normal, Low
+- **FIFO Within Priority**: Maintains insertion order within same priority
+- **Thread-Safe**: Concurrent enqueue/dequeue operations
+- **High Throughput**: Optimized for high-concurrency scenarios
+- **Flexible Operations**: Enqueue, dequeue, peek, drain, clear
+- **Priority Filtering**: Count items by priority level
+
+### Backpressure Monitoring & Load Shedding (Completed)
+- **BackpressureMonitor**: Real-time queue depth monitoring
+- **Four Status Levels**: Normal, Warning, Critical, Overload
+- **Configurable Thresholds**: Customizable warning/critical/overload levels
+- **Load Shedding**: Automatic rejection when queue is full
+- **Metrics Tracking**: Enqueued, dequeued, rejected, peak depth
+- **Utilization Monitoring**: Real-time queue utilization percentage
+- **Throughput Calculation**: Requests per second measurement
+- **Thread-Safe**: Concurrent monitoring operations
+
+### Performance Benchmarking (Completed)
+- **Comprehensive Benchmark Suite**: Criterion-based performance testing
+- **Component Benchmarks**: Queue, backpressure, metrics, health, predictor
+- **Throughput Tests**: Sustained 1000+ ops performance measurement
+- **Memory Stability Tests**: 7 comprehensive memory leak tests
+- **Concurrent Load Tests**: Multi-threaded stress testing
+- **Production-Ready**: Verified performance characteristics
+
 ## Installation
 
 Add to your `Cargo.toml`:
@@ -537,6 +564,173 @@ predictor.reset("stripe");
 
 // Reset all routes
 predictor.reset_all();
+```
+
+### 13. High-Performance Priority Queue
+
+```rust
+use transaction_router::PriorityQueue;
+use transaction_router::queue::priority_queue::Priority;
+
+// Create a priority queue
+let queue = PriorityQueue::new();
+
+// Or with pre-allocated capacity
+let queue = PriorityQueue::with_capacity(1000);
+
+// Enqueue items with different priorities
+queue.enqueue("critical_transaction", Priority::Critical);
+queue.enqueue("high_priority_tx", Priority::High);
+queue.enqueue("normal_tx", Priority::Normal);
+queue.enqueue("low_priority_tx", Priority::Low);
+
+// Dequeue items (highest priority first)
+while let Some(item) = queue.dequeue() {
+    println!("Processing: {:?} with priority {:?}", item.item, item.priority);
+}
+
+// Peek at highest priority item without removing
+if let Some(priority) = queue.peek() {
+    println!("Next priority: {:?}", priority);
+}
+
+// Check queue status
+println!("Queue length: {}", queue.len());
+println!("Is empty: {}", queue.is_empty());
+
+// Count items by priority
+let high_count = queue.count_by_priority(Priority::High);
+println!("High priority items: {}", high_count);
+
+// Drain all items in priority order
+let all_items = queue.drain();
+for item in all_items {
+    println!("Item: {:?}", item.item);
+}
+
+// Clear the queue
+queue.clear();
+
+// Try dequeue (non-blocking)
+if let Some(item) = queue.try_dequeue() {
+    println!("Got item: {:?}", item.item);
+}
+
+// Concurrent usage
+use std::thread;
+
+let queue = PriorityQueue::new();
+let mut handles = vec![];
+
+for i in 0..10 {
+    let queue_clone = queue.clone();
+    let handle = thread::spawn(move || {
+        for j in 0..100 {
+            queue_clone.enqueue(i * 100 + j, Priority::Normal);
+        }
+    });
+    handles.push(handle);
+}
+
+for handle in handles {
+    handle.join().unwrap();
+}
+
+println!("Total items: {}", queue.len());
+```
+
+### 14. Backpressure Monitoring & Load Shedding
+
+```rust
+use transaction_router::{BackpressureMonitor, BackpressureConfig, BackpressureStatus};
+use std::time::Duration;
+
+// Create monitor with default config (max 10000 items)
+let monitor = BackpressureMonitor::with_default_config();
+
+// Or with custom configuration
+let config = BackpressureConfig::new(1000)  // max queue depth
+    .with_thresholds(0.6, 0.8, 0.95)  // warning, critical, overload
+    .with_measurement_window(Duration::from_secs(60));
+
+let monitor = BackpressureMonitor::new(config);
+
+// Try to enqueue (with load shedding)
+if monitor.try_enqueue() {
+    println!("Item accepted");
+    // Process item...
+    monitor.dequeue();
+} else {
+    println!("Queue full - item rejected");
+}
+
+// Or enqueue without checking (for monitoring only)
+monitor.enqueue();
+// ... later
+monitor.dequeue();
+
+// Check backpressure status
+match monitor.status() {
+    BackpressureStatus::Normal => println!("System operating normally"),
+    BackpressureStatus::Warning => println!("Queue filling up"),
+    BackpressureStatus::Critical => println!("High load - consider scaling"),
+    BackpressureStatus::Overload => println!("System overloaded!"),
+}
+
+// Check if under backpressure
+if monitor.is_under_backpressure() {
+    println!("Warning: System experiencing backpressure");
+}
+
+// Check if should shed load
+if monitor.should_shed_load() {
+    println!("Critical: Rejecting new requests");
+}
+
+// Get queue metrics
+println!("Current depth: {}", monitor.current_depth());
+println!("Max depth: {}", monitor.max_depth());
+println!("Utilization: {:.2}%", monitor.utilization() * 100.0);
+println!("Peak depth: {}", monitor.peak_depth());
+
+// Get throughput metrics
+println!("Total enqueued: {}", monitor.total_enqueued());
+println!("Total dequeued: {}", monitor.total_dequeued());
+println!("Total rejected: {}", monitor.total_rejected());
+println!("Rejection rate: {:.2}%", monitor.rejection_rate() * 100.0);
+
+// Calculate throughput
+let elapsed = Duration::from_secs(60);
+let throughput = monitor.throughput(elapsed);
+println!("Throughput: {:.2} req/sec", throughput);
+
+// Reset metrics
+monitor.reset();
+
+// Concurrent usage
+use std::thread;
+
+let monitor = BackpressureMonitor::new(BackpressureConfig::new(1000));
+let mut handles = vec![];
+
+for i in 0..10 {
+    let monitor_clone = monitor.clone();
+    let handle = thread::spawn(move || {
+        for _ in 0..100 {
+            if monitor_clone.try_enqueue() {
+                // Process...
+                monitor_clone.dequeue();
+            }
+        }
+    });
+    handles.push(handle);
+}
+
+for handle in handles {
+    handle.join().unwrap();
+}
+
+println!("Rejected: {}", monitor.total_rejected());
 ```
 
 ## Configuration Format

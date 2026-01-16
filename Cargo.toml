@@ -19,3 +19,8 @@ rand = "0.8"
 
 [dev-dependencies]
 tempfile = "3.8"
+criterion = "0.5"
+
+[[bench]]
+name = "performance_benchmarks"
+harness = false
