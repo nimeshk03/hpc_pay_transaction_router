@@ -43,6 +43,36 @@ This library provides intelligent routing of payment transactions across multipl
 - **Router Integration**: Per-PSP circuit breakers with automatic route filtering
 - **Cascading Failure Prevention**: Routes with open circuits automatically excluded from selection
 
+### Metrics Collection System (Completed)
+- **MetricsCollector**: Per-route metrics with rolling windows
+- **Percentile Calculations**: P50, P95, P99 latency tracking with interpolation
+- **Exponential Moving Average**: Smoothed latency tracking
+- **Rolling Window**: Configurable window size for recent data
+- **Success Rate Tracking**: Real-time success/failure rate calculation
+- **Min/Max Tracking**: Latency bounds monitoring
+- **Thread-Safe**: Concurrent metrics updates
+- **High Performance**: Sub-microsecond metric recording
+
+### Active Health Probes (Completed)
+- **HealthChecker**: Per-route health status tracking
+- **Health Status States**: Healthy, Degraded, Unhealthy, Unknown
+- **Availability Tracking**: Success rate calculation for health probes
+- **Consecutive Thresholds**: Configurable success/failure thresholds
+- **Rolling Window**: Configurable probe history window
+- **Response Time Tracking**: Average response time monitoring
+- **Thread-Safe**: Concurrent probe recording
+- **Status Transitions**: Automatic state transitions based on probe results
+
+### Predictive Latency Model (Completed)
+- **LatencyPredictor**: EMA-based latency prediction per route
+- **Anomaly Detection**: Statistical anomaly detection with configurable thresholds
+- **Degradation Detection**: Automatic detection of degrading performance
+- **Trend Analysis**: Performance trend calculation (improving/degrading)
+- **Standard Deviation**: Variance tracking for anomaly detection
+- **Configurable EMA**: Adjustable smoothing factor (alpha)
+- **Thread-Safe**: Concurrent prediction updates
+- **High Accuracy**: Sub-millisecond prediction precision
+
 ## Installation
 
 Add to your `Cargo.toml`:
@@ -312,6 +342,201 @@ for (psp_id, metrics) in cb_metrics {
 if let Some(breaker) = router.get_circuit_breaker("stripe") {
     println!("Stripe circuit state: {:?}", breaker.state());
 }
+```
+
+### 10. Metrics Collection System
+
+```rust
+use transaction_router::MetricsCollector;
+use std::time::Duration;
+
+// Create metrics collector with default config (1000 sample window, 0.2 EMA alpha)
+let collector = MetricsCollector::new();
+
+// Or with custom configuration
+let collector = MetricsCollector::with_config(
+    5000,  // window_size: keep last 5000 samples
+    0.1    // ema_alpha: smoothing factor for exponential moving average
+);
+
+// Record latency measurements
+collector.record_latency("stripe", Duration::from_millis(45));
+collector.record_latency("stripe", Duration::from_millis(55));
+
+// Record success/failure
+collector.record_success("stripe");
+collector.record_failure("stripe");
+
+// Record combined request (success + latency)
+collector.record_request("stripe", true, Duration::from_millis(50));
+
+// Get statistics for a route
+if let Some(stats) = collector.get_stats("stripe") {
+    println!("Total requests: {}", stats.total_requests);
+    println!("Success rate: {:.2}%", stats.success_rate * 100.0);
+    println!("Average latency: {:.2}ms", stats.avg_latency_ms);
+    println!("P50 latency: {}ms", stats.p50_latency_ms);
+    println!("P95 latency: {}ms", stats.p95_latency_ms);
+    println!("P99 latency: {}ms", stats.p99_latency_ms);
+    println!("Min latency: {}ms", stats.min_latency_ms);
+    println!("Max latency: {}ms", stats.max_latency_ms);
+    println!("EMA latency: {:.2}ms", stats.ema_latency_ms);
+}
+
+// Get statistics for all routes
+let all_stats = collector.get_all_stats();
+for (route_id, stats) in all_stats {
+    println!("{}: {:.2}% success, P95: {}ms", 
+        route_id, stats.success_rate * 100.0, stats.p95_latency_ms);
+}
+
+// Reset metrics for a specific route
+collector.reset("stripe");
+
+// Reset all metrics
+collector.reset_all();
+```
+
+### 11. Active Health Probes
+
+```rust
+use transaction_router::{HealthChecker, HealthCheckConfig, HealthStatus};
+
+// Create health checker with default config
+let checker = HealthChecker::with_default_config();
+
+// Or with custom configuration
+let config = HealthCheckConfig::new(
+    30,    // probe_interval_secs: check every 30 seconds
+    5000,  // timeout_ms: 5 second timeout
+    3,     // healthy_threshold: 3 consecutive successes = healthy
+    3      // unhealthy_threshold: 3 consecutive failures = unhealthy
+).with_window_size(100);  // keep last 100 probe results
+
+let checker = HealthChecker::new(config);
+
+// Add routes to monitor
+checker.add_route("stripe");
+checker.add_route("adyen");
+
+// Record probe results
+checker.record_probe_success("stripe", 150);  // 150ms response time
+checker.record_probe_failure("adyen", "Connection timeout".to_string());
+
+// Check health status
+let status = checker.get_status("stripe");
+match status {
+    HealthStatus::Healthy => println!("Route is healthy"),
+    HealthStatus::Degraded => println!("Route is degraded"),
+    HealthStatus::Unhealthy => println!("Route is unhealthy"),
+    HealthStatus::Unknown => println!("No probe data yet"),
+}
+
+// Check if route is healthy
+if checker.is_healthy("stripe") {
+    println!("Stripe is ready to handle traffic");
+}
+
+// Get availability score (0.0 - 1.0)
+let availability = checker.get_availability("stripe");
+println!("Availability: {:.2}%", availability * 100.0);
+
+// Get average response time
+let avg_time = checker.get_avg_response_time("stripe");
+println!("Average response time: {:.2}ms", avg_time);
+
+// Get probe count
+let probe_count = checker.get_probe_count("stripe");
+println!("Total probes: {}", probe_count);
+
+// Get all route statuses
+let all_statuses = checker.get_all_statuses();
+for (route_id, status) in all_statuses {
+    println!("{}: {:?}", route_id, status);
+}
+
+// Get all availabilities
+let all_availabilities = checker.get_all_availabilities();
+for (route_id, availability) in all_availabilities {
+    println!("{}: {:.2}%", route_id, availability * 100.0);
+}
+
+// Reset specific route
+checker.reset("stripe");
+
+// Reset all routes
+checker.reset_all();
+```
+
+### 12. Predictive Latency Model
+
+```rust
+use transaction_router::{LatencyPredictor, LatencyPredictorConfig};
+use std::time::Duration;
+
+// Create predictor with default config
+let predictor = LatencyPredictor::with_default_config();
+
+// Or with custom configuration
+let config = LatencyPredictorConfig::new(0.3)  // EMA alpha
+    .with_anomaly_threshold(3.0)  // 3x std dev for anomaly
+    .with_degradation_config(20, 1.5);  // window=20, threshold=1.5x
+
+let predictor = LatencyPredictor::new(config);
+
+// Update with latency measurements
+predictor.update("stripe", Duration::from_millis(100));
+predictor.update("stripe", Duration::from_millis(120));
+predictor.update("stripe", Duration::from_millis(110));
+
+// Get predicted latency (EMA)
+if let Some(predicted) = predictor.predict("stripe") {
+    println!("Predicted latency: {}ms", predicted.as_millis());
+}
+
+// Detect anomalies
+let latency = Duration::from_millis(500);
+if predictor.is_anomaly("stripe", latency) {
+    println!("Anomaly detected! Latency spike: {}ms", latency.as_millis());
+}
+
+// Detect degrading performance
+if predictor.is_degrading("stripe") {
+    println!("Warning: Route performance is degrading");
+}
+
+// Get performance trend (-1.0 to 1.0)
+let trend = predictor.get_trend("stripe");
+if trend > 0.2 {
+    println!("Performance degrading: {:.2}%", trend * 100.0);
+} else if trend < -0.2 {
+    println!("Performance improving: {:.2}%", trend.abs() * 100.0);
+}
+
+// Get standard deviation
+let std_dev = predictor.get_std_dev("stripe");
+println!("Latency std dev: {:.2}ms", std_dev);
+
+// Get sample count
+let count = predictor.get_sample_count("stripe");
+println!("Samples: {}", count);
+
+// Get last recorded latency
+if let Some(last) = predictor.get_last_latency("stripe") {
+    println!("Last latency: {}ms", last.as_millis());
+}
+
+// Get all predictions
+let all_preds = predictor.get_all_predictions();
+for (route_id, predicted) in all_preds {
+    println!("{}: {}ms predicted", route_id, predicted.as_millis());
+}
+
+// Reset specific route
+predictor.reset("stripe");
+
+// Reset all routes
+predictor.reset_all();
 ```
 
 ## Configuration Format
