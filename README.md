@@ -121,6 +121,25 @@ This library provides intelligent routing of payment transactions across multipl
 - **Routing Metrics Collector**: Pre-built metrics for routing operations
 - **OpenTelemetry Support**: Optional integration with OpenTelemetry
 
+### Chaos Testing Framework (Completed)
+- **Failure Injector**: Inject failures into PSP connections
+- **Network Simulator**: Simulate network conditions (latency, partition, packet loss)
+- **Recovery Verifier**: Track and verify system recovery from failures
+- **Multiple Failure Types**: Complete outage, timeout, rate limiting, intermittent failures
+
+### Security and Compliance (Completed)
+- **API Authentication**: API key-based authentication with permissions
+- **Rate Limiting**: Configurable rate limits per API key
+- **Audit Logging**: Comprehensive audit trail with sensitive data masking
+- **Data Protection**: Automatic masking of PCI-sensitive data (card numbers, CVV)
+- **TLS Validation**: Enforce HTTPS for PSP connections
+
+### Deployment and Operations (Completed)
+- **Health Endpoints**: Kubernetes-compatible health check endpoints
+- **Graceful Shutdown**: Drain in-flight requests before termination
+- **Readiness Probes**: Component-level readiness checking
+- **Liveness Probes**: System health monitoring with degradation detection
+
 ## Installation
 
 Add to your `Cargo.toml`:
