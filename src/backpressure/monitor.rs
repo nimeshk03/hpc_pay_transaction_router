@@ -99,7 +99,12 @@ impl BackpressureMetrics {
 
     fn decrement_depth(&self) -> usize {
         self.total_dequeued.fetch_add(1, Ordering::SeqCst);
-        self.current_depth.fetch_sub(1, Ordering::SeqCst).saturating_sub(1)
+        let current = self.current_depth.load(Ordering::SeqCst);
+        if current > 0 {
+            self.current_depth.fetch_sub(1, Ordering::SeqCst).saturating_sub(1)
+        } else {
+            0
+        }
     }
 
     fn reject(&self) {

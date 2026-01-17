@@ -100,6 +100,27 @@ This library provides intelligent routing of payment transactions across multipl
 - **Concurrent Load Tests**: Multi-threaded stress testing
 - **Production-Ready**: Verified performance characteristics
 
+### Distributed State Management (Completed)
+- **Redis Integration**: Optional feature for distributed deployments
+- **Distributed Locks**: Redlock-based distributed locking mechanism
+- **Distributed Counters**: Atomic counters across instances
+- **State Synchronization**: Circuit breaker state sharing via Pub/Sub
+- **Audit Logging**: Redis Streams for audit trail
+
+### Event Publishing (Completed)
+- **Event Types**: Routing decisions, circuit breaker changes, config updates
+- **In-Memory Publisher**: Built-in event publisher for testing and local use
+- **Kafka Integration**: Optional feature for production event streaming
+- **Buffered Publishing**: Batch events for improved throughput
+- **Event Filtering**: Query events by type
+
+### Observability and Monitoring (Completed)
+- **Prometheus Metrics**: Export metrics in Prometheus format
+- **Distributed Tracing**: W3C Trace Context compatible span management
+- **Span Builder**: Fluent API for creating trace spans
+- **Routing Metrics Collector**: Pre-built metrics for routing operations
+- **OpenTelemetry Support**: Optional integration with OpenTelemetry
+
 ## Installation
 
 Add to your `Cargo.toml`:
